@@ -1,0 +1,75 @@
+---
+title: 'Scrapping Example: Property Wall (Malaysian Real Estate)'
+output:
+  html_document: default
+  html_notebook: default
+---
+
+Example taken from [Bob Rudis' Blog](https://rud.is/b/2017/05/05/scrapeover-friday-a-k-a-another-r-scraping-makeover/)
+
+This is an example of combining httr, rvest and purrr to 1) create a list of pages to scrape and 2) apply the httr functions sequentially, without a for loop, and adding a progress bar.
+
+```{r}
+library(httr)
+library(rvest)
+library(stringi)
+library(tidyverse)
+
+get_page <- function(i=1, pb=NULL) {
+  
+  if (!is.null(pb)) pb$tick()$print()
+  
+  POST(url = "http://www.propwall.my/wp-admin/admin-ajax.php", 
+       body = list(action = "star_property_classified_list_change_ajax", 
+                   tab = "Most Relevance", 
+                   page = as.integer(i), location = "Mont Kiara", 
+                   category = "", listing = "For Sale", 
+                   price = "", keywords = "Mont Kiara, Kuala Lumpur", 
+                   filter_id = "17", filter_type = "Location", 
+                   furnishing = "", builtup = "", 
+                   tenure = "", view = "list", 
+                   map = "on", blurb = "0"), 
+       encode = "form") -> res
+  
+  stop_for_status(res)
+  
+  res <- content(res, as="parsed") 
+  
+  Sys.sleep(sample(seq(0,2,0.5), 1))
+  
+  res
+  
+}
+```
+
+```{r}
+get_page(1) %>% 
+  html_node(xpath=".//a[contains(., 'Classifieds:')]") %>% 
+  html_text() %>% 
+  stri_match_last_regex("([[:digit:],]+)$") %>% 
+  .[,2] %>% 
+  stri_replace_all_fixed(",", "") %>% 
+  as.numeric() -> classified_ct
+
+total_pages <- 1 + (classified_ct %/% 20)
+```
+
+```{r}
+get_listings <- function(pg) {
+  data_frame(
+    link = html_nodes(pg, "div#list-content > div.media * h4.media-heading > a:nth-of-type(1)" ) %>%  html_attr("href"),
+    description = html_nodes(pg, "div#list-content > div.media * h4.media-heading > a:nth-of-type(1)" ) %>% html_text(trim = TRUE)  
+  )
+}
+```
+
+
+
+```{r}
+pb <- progress_estimated(total_pages)
+(listings_df <- map_df(1:total_pages, ~get_listings(get_page(.x, pb))))
+```
+
+
+
+
