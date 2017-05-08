@@ -1,1 +1,0 @@
-# scrape-paywall-properties
